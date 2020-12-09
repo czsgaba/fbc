@@ -26,7 +26,7 @@ sub cExternStmtBegin( )
 	end if
 
 	'' EXTERN
-	lexSkipToken( )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
 
 	'' "mangling spec"
 	if( lexGetClass( ) <> FB_TKCLASS_STRLITERAL ) then
@@ -52,6 +52,10 @@ sub cExternStmtBegin( )
 
 	case "c++"
 		mangling = FB_MANGLING_CPP
+		lexSkipToken( )
+
+	case "rtlib"
+		mangling = FB_MANGLING_RTLIB
 		lexSkipToken( )
 
 	case else
@@ -84,8 +88,8 @@ sub cExternStmtEnd( )
 	end if
 
 	'' END EXTERN
-	lexSkipToken( )
-	lexSkipToken( )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
 
 	'' pop from stmt stack
 	parser.mangling = stk->ext.lastmang

@@ -184,7 +184,7 @@ end function
 '' cSelConstStmtNext  =  CASE (ELSE | (ConstExpression{int} (',' ConstExpression{int})*)) .
 sub cSelConstStmtNext( byval stk as FB_CMPSTMTSTK ptr )
 	'' CASE
-	lexSkipToken( )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
 
 	'' end scope
 	if( stk->scopenode <> NULL ) then
@@ -198,7 +198,7 @@ sub cSelConstStmtNext( byval stk as FB_CMPSTMTSTK ptr )
 
 	'' ELSE?
 	if( lexGetToken( ) = FB_TK_ELSE ) then
-		lexSkipToken( )
+		lexSkipToken( LEXCHECK_POST_SUFFIX )
 
 		stk->select.const_.deflabel = symbAddLabel( NULL )
 		astAdd( astNewLABEL( stk->select.const_.deflabel ) )
@@ -223,6 +223,17 @@ sub cSelConstStmtNext( byval stk as FB_CMPSTMTSTK ptr )
 
 		'' first case?
 		if( swtbase = ctx.base ) then
+			'' we initially set the bias to the first value minus 
+			'' FB_MAXJUMPTBSLOTS.  This allows us to compare range values 
+			'' (fromvalue <= tovalue ) and check if ranges are too 
+			'' large.  Later, in cSelConstStmtEnd() we will adjust the 
+			'' bias to the lowest valid range value seen.
+
+			'' In terms of values used by the user:
+			'' minimum := bias
+			'' initial := bias + FB_MAXJUMPTBSLOTS
+			'' maximum := bias + FB_MAXJUMPTBSLOTS*2
+
 			stk->select.const_.bias = value - FB_MAXJUMPTBSLOTS
 		end if
 
@@ -232,7 +243,7 @@ sub cSelConstStmtNext( byval stk as FB_CMPSTMTSTK ptr )
 		'' TO?
 		dim as ulongint tovalue
 		if( lexGetToken( ) = FB_TK_TO ) then
-			lexSkipToken( )
+			lexSkipToken( LEXCHECK_POST_SUFFIX )
 
 			'' ConstExpression{int}
 			tovalue = cConstIntExprRanged( cExpression( ), stk->select.const_.dtype )
@@ -253,9 +264,16 @@ sub cSelConstStmtNext( byval stk as FB_CMPSTMTSTK ptr )
 			continue do
 		end if
 
-		assert( value <= (FB_MAXJUMPTBSLOTS*2) )
-		assert( tovalue <= (FB_MAXJUMPTBSLOTS*2) )
 		assert( tovalue >= value )
+
+		'' check if emitted jump table would be too large. Even without this check, 
+		'' emitter can still build a valid jump table, as it will fill in gaps 
+		'' between ranges, however we limit the size here, as it might end up
+		''  unreasonably large.
+		if( (value >= FB_MAXJUMPTBSLOTS*2) or (tovalue >= FB_MAXJUMPTBSLOTS*2) ) then
+			errReport( FB_ERRMSG_RANGETOOLARGE )
+			continue do
+		end if
 
 		'' Add Case values in range
 		do
@@ -291,8 +309,8 @@ sub cSelConstStmtEnd( byval stk as FB_CMPSTMTSTK ptr )
 	dim as FBSYMBOL ptr deflabel = any
 
 	'' END SELECT
-	lexSkipToken( )
-	lexSkipToken( )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
+	lexSkipToken( LEXCHECK_POST_SUFFIX )
 
     deflabel = stk->select.const_.deflabel
     if( deflabel = NULL ) then
@@ -321,6 +339,13 @@ sub cSelConstStmtEnd( byval stk as FB_CMPSTMTSTK ptr )
 			end if
 		next
 		stk->select.const_.bias += adjust_bias
+	end if
+
+	'' Jump table too large? We haven't overflowed any internal structures
+	'' and the emitter will produce valid code, but to be consistent with
+	'' limits and documentation, report an error.
+	if( span >= FB_MAXJUMPTBSLOTS ) then
+		errReport( FB_ERRMSG_TOOMANYLABELS )
 	end if
 
 	astAdd( astBuildJMPTB( stk->select.sym, _

@@ -21,6 +21,7 @@ enum
 	PRINT_TARGET
 	PRINT_X
 	PRINT_FBLIBDIR
+	PRINT_SHA1
 end enum
 
 type FBC_EXTOPT
@@ -1657,6 +1658,8 @@ private sub handleOpt(byval optid as integer, byref arg as string)
 			fbc.backend = FB_BACKEND_GCC
 		case "llvm"
 			fbc.backend = FB_BACKEND_LLVM
+		Case "gas64"
+			fbc.backend = FB_BACKEND_GAS64
 		case else
 			hFatalInvalidOption( arg )
 		end select
@@ -1773,6 +1776,7 @@ private sub handleOpt(byval optid as integer, byref arg as string)
 		case "target" : fbc.print = PRINT_TARGET
 		case "x"      : fbc.print = PRINT_X
 		case "fblibdir" : fbc.print = PRINT_FBLIBDIR
+		case "sha-1"  : fbc.print = PRINT_SHA1
 		case else
 			hFatalInvalidOption( arg )
 		end select
@@ -1902,6 +1906,10 @@ private sub handleOpt(byval optid as integer, byref arg as string)
 			fbSetOption( FB_COMPOPT_PEDANTICCHK, _
 						 fbGetOption( FB_COMPOPT_PEDANTICCHK ) or FB_PDCHECK_CASTFUNCPTR )
 			value = FB_WARNINGMSGS_LOWEST_LEVEL
+
+		case "suffix"
+			fbSetOption( FB_COMPOPT_PEDANTICCHK, _
+						 fbGetOption( FB_COMPOPT_PEDANTICCHK ) or FB_PDCHECK_SUFFIX )
 
 		case "pedantic"
 			fbSetOption( FB_COMPOPT_PEDANTICCHK, FB_PDCHECK_DEFAULT )
@@ -2343,8 +2351,10 @@ private sub hParseArgs( byval argc as integer, byval argv as zstring ptr ptr )
 
 	'' 7. Check whether backend supports the target/arch.
 	'' -gen gas with non-x86 arch isn't possible.
-	if( (fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS) and _
-	    (fbGetCpuFamily( ) <> FB_CPUFAMILY_X86) ) then
+	if( ((fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS) and _
+	    (fbGetCpuFamily( ) <> FB_CPUFAMILY_X86)) _
+	    or ((fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS64) and _
+	    (fbGetCpuFamily( ) <> FB_CPUFAMILY_X86_64)) ) then
 		errReportEx( FB_ERRMSG_GENGASWITHNONX86, fbGetFbcArch( ), -1 )
 		fbcEnd( 1 )
 	end if
@@ -2383,7 +2393,7 @@ private sub hParseArgs( byval argc as integer, byval argv as zstring ptr ptr )
 		end select
 
 		'' -gen gas only supports -asm intel
-		if( (fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS) and _
+		if( ( (fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS) or (fbGetOption( FB_COMPOPT_BACKEND ) = FB_BACKEND_GAS64) ) and _
 		    (fbc.asmsyntax <> FB_ASMSYNTAX_INTEL) ) then
 			errReportEx( FB_ERRMSG_GENGASWITHOUTINTEL, "", -1 )
 		end if
@@ -2520,6 +2530,7 @@ private sub fbcPrintTargetInfo( )
 		end if
 	#endif
 	print "target:", s
+	print "backend:", fbGetBackendName( fbGetOption( FB_COMPOPT_BACKEND ) )
 end sub
 
 private sub fbcDetermineMainName( )
@@ -2564,7 +2575,9 @@ private function hGetAsmName _
 	asmfile = hStripExt( *module->objfile )
 
 	ext = @".asm"
-
+	if( fbGetOption( FB_COMPOPT_BACKEND )= FB_BACKEND_GAS64 ) then
+		ext = @".a64"
+	end if
 	if( stage = 1 ) then
 		select case( fbGetOption( FB_COMPOPT_BACKEND ) )
 		case FB_BACKEND_GCC
@@ -2936,6 +2949,13 @@ private function hCompileStage2Module( byval module as FBCIOFILE ptr ) as intege
 
 		'' Avoid gcc exception handling bloat
 		ln += "-fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables "
+
+		'' Prevent format string errors on gcc 9.x. (enabled by default with '-Wall')
+		'' TODO: fbc currently emits the ZSTRING type as 'uint8' when it
+		'' should probably preserve the 'char' type.  In C, there are 3 
+		'' distinct types, 'char', 'unsigned char', 'signed char'.
+		'' See ir-hlc.bas:hEmitType()
+		ln += "-Wno-format "
 
 		if( fbGetOption( FB_COMPOPT_DEBUGINFO ) ) then
 			ln += "-g "
@@ -3501,6 +3521,9 @@ private sub hPrintOptions( byval verbose as integer )
 	print "  -print host|target  Display host/target system name"
 	print "  -print fblibdir  Display the compiler's lib/ path"
 	print "  -print x         Display output binary/library file name (if known)"
+	if( verbose ) then
+	print "  -print sha-1     Display compiler's source code commit sha-1 (if known)"
+	end if
 	print "  -profile         Enable function profiling"
 	print "  -r               Write out .asm/.c/.ll (-gen gas/gcc/llvm) only"
 	print "  -rr              Write out the final .asm only"
@@ -3522,6 +3545,16 @@ private sub hPrintOptions( byval verbose as integer )
 	print "  -vec <n>         Automatic vectorization level (default: 0)"
 	print "  [-]-version      Show compiler version"
 	print "  -w all|pedantic|<n>  Set min warning level: all, pedantic or a value"
+	if( verbose ) then
+	print "  -w all           Enable all warnings"
+	print "  -w none          Disable all warnings"
+	print "  -w param         Enable parameter warnings"
+	print "  -w escape        Enable string escape sequence warnings"
+	print "  -w next          Enable next statement warnings"
+	print "  -w signedness    Enable type signedness warnings"
+	print "  -w constness     Enable const type warnings"
+	print "  -w suffix        Enable invalid suffix warnings"
+	end if
 	print "  -Wa <a,b,c>      Pass options to 'as'"
 	print "  -Wc <a,b,c>      Pass options to 'gcc' (-gen gcc) or 'llc' (-gen llvm)"
 	print "  -Wl <a,b,c>      Pass options to 'ld'"
@@ -3545,7 +3578,7 @@ private sub hPrintVersion( byval verbose as integer )
 	dim as string config
 
 	print "FreeBASIC Compiler - Version " + FB_VERSION + _
-		" (" + FB_BUILD_DATE + "), built for " + fbGetHostId( ) + " (" & fbGetHostBits( ) & "bit)"
+		" (" + FB_BUILD_DATE_ISO + "), built for " + fbGetHostId( ) + " (" & fbGetHostBits( ) & "bit)"
 	print "Copyright (C) 2004-2019 The FreeBASIC development team."
 
 	#ifdef ENABLE_STANDALONE
@@ -3558,6 +3591,13 @@ private sub hPrintVersion( byval verbose as integer )
 
 	if( len( config ) > 0 ) then
 		print config
+	end if
+
+	if( verbose ) then
+		fbcPrintTargetInfo( )
+		if( FB_BUILD_SHA1 > "" ) then
+			print "source sha-1: " & FB_BUILD_SHA1
+		end if
 	end if
 end sub
 
@@ -3620,6 +3660,8 @@ end sub
 			print fbc.outname
 		case PRINT_FBLIBDIR
 			print fbc.libpath
+		case PRINT_SHA1
+			print FB_BUILD_SHA1
 		end select
 		fbcEnd( 0 )
 	end if
@@ -3645,7 +3687,8 @@ end sub
 		fbcEnd( 0 )
 	end if
 
-	if( fbGetOption( FB_COMPOPT_BACKEND ) <> FB_BACKEND_GAS ) then
+	if( (fbGetOption( FB_COMPOPT_BACKEND ) <> FB_BACKEND_GAS)  and _
+		fbGetOption( FB_COMPOPT_BACKEND ) <> FB_BACKEND_GAS64 ) then
 		''
 		'' Compile intermediate .c modules produced by -gen gcc
 		''

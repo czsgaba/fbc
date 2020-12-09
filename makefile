@@ -81,7 +81,10 @@
 #   ENABLE_SUFFIX=-0.24    append a string like "-0.24" to fbc/FB dir names,
 #                          and use "-d ENABLE_SUFFIX=$(ENABLE_SUFFIX)" (non-standalone only)
 #   ENABLE_LIB64=1         use prefix/lib64/ instead of prefix/lib/ for 64bit libs (non-standalone only)
-#   ENABLE_STRIPALL=1      use "-d ENABLE_STRIPALL" with select targets
+#   ENABLE_STRIPALL=1      use "-d ENABLE_STRIPALL" with all targets
+#   ENABLE_STRIPALL=0      disable "-d ENABLE_STRIPALL" with all targets
+#   FBSHA1=1               determine the sha-1 of the current commit in repo and store it in the compiler
+#   FBSHA1=some-sha-1      explicitly indicate the sha-1 to store in the compiler
 #   FBPACKAGE     bindist: The package/archive file name without path or extension
 #   FBPACKSUFFIX  bindist: Allows adding a custom suffix to the normal package name (and the toplevel dir in the archive)
 #   FBMANIFEST    bindist: The manifest file name without path or extension
@@ -94,6 +97,7 @@
 #   -d ENABLE_PREFIX=/some/path   hard-code specific $(prefix) into fbc
 #   -d ENABLE_LIB64          use prefix/lib64/ instead of prefix/lib/ for 64bit libs (non-standalone only)
 #   -d ENABLE_STRIPALL       configure fbc to pass down '--strip-all' to linker by default
+#   -d FBSHA1=some-sha-1     store 'some-sha-1' in the compiler for version information
 #
 # rtlib/gfxlib2 source code configuration (CFLAGS):
 #   -DDISABLE_X11    build without X11 headers (disables X11 gfx driver)
@@ -101,6 +105,7 @@
 #   -DDISABLE_FFI    build without ffi.h (disables ThreadCall)
 #   -DDISABLE_OPENGL build without OpenGL headers (disables OpenGL gfx drivers)
 #   -DDISABLE_FBDEV  build without Linux framebuffer device headers (disables Linux fbdev gfx driver)
+#   -DDISABLE_D3D10  build without DirectX 10 driver(disable D2D driver in windows)
 #
 # makefile variables may either be set on the make command line,
 # or (in a more permanent way) inside a 'config.mk' file.
@@ -205,7 +210,7 @@ else
       TARGET_OS := linux
     else ifneq ($(findstring MINGW,$(uname)),)
       TARGET_OS := win32
-	else ifneq ($(findstring MSYS_NT,$(uname)),)
+    else ifneq ($(findstring MSYS_NT,$(uname)),)
       TARGET_OS := win32
     else ifeq ($(uname),MS-DOS)
       TARGET_OS := dos
@@ -222,6 +227,34 @@ else
     # For DJGPP, always use x86 (DJGPP's uname -m returns just "pc")
     ifeq ($(TARGET_OS),dos)
       TARGET_ARCH := x86
+
+    # For MSYS2, use default compilers (uname -m returns MSYS2's shell
+    #  architecture).  For example, from win 7:
+    #
+    # host    shell    uname -s -m              default gcc target
+    # ------  -------  --------------------     ------------------
+    # msys32  msys2    MSYS_NT-6.1-WOW i686     n/a
+    # msys32  mingw32  MINGW32_NT-6.1-WOW i686  i686-w64-mingw32
+    # msys32  mingw64  MINGW64_NT-6.1-WOW i686  x86_64-w64-mingw32
+    # msys64  msys2    MSYS_NT-6.1 x86_64       n/a
+    # msys64  mingw32  MINGW32_NT-6.1 x86_64    i686-w64-mingw32
+    # msys64  mingw64  MINGW64_NT-6.1 x86_64    x86_64-w64-mingw32
+    #
+    # on WinXP...
+    # host    shell    uname -s -m              default gcc target
+    # ------  -------  --------------------     ------------------
+    # mingw   cmd.exe  MINGW32_NT-5.1 i686      mingw32
+    #
+    else ifneq ($(findstring MINGW32,$(uname)),)
+      # host is WinXP, then don't include DirectX 10 driver
+      ifneq ($(findstring NT-5,$(uname)),)
+        DISABLE_D3D10 := 1
+      endif
+      TARGET_ARCH := x86
+    else ifneq ($(findstring MINGW64,$(uname)),)
+      TARGET_ARCH := x86_64
+
+    # anything, trust 'uname -m', we have no other choice
     else
       TARGET_ARCH = $(shell uname -m)
     endif
@@ -422,6 +455,13 @@ endif
 ifdef ENABLE_STANDALONE
   ALLFBCFLAGS += -d ENABLE_STANDALONE
 endif
+ifdef FBSHA1
+  ifeq ($(FBSHA1),1)
+    ALLFBCFLAGS += -d 'FBSHA1="$(shell git rev-parse HEAD)"'
+  else
+    ALLFBCFLAGS += -d 'FBSHA1="$(FBSHA1)"'
+  endif
+endif
 ifdef ENABLE_SUFFIX
   ALLFBCFLAGS += -d 'ENABLE_SUFFIX="$(ENABLE_SUFFIX)"'
 endif
@@ -432,6 +472,11 @@ ifdef ENABLE_LIB64
   ALLFBCFLAGS += -d ENABLE_LIB64
 endif
 ifdef ENABLE_STRIPALL
+  ifneq ($(ENABLE_STRIPALL),0)
+    ALLFBCFLAGS += -d ENABLE_STRIPALL
+  endif
+else
+  # by default dos and windows use --strip-all
   ifneq ($(filter dos win32,$(TARGET_OS)),)
     ALLFBCFLAGS += -d ENABLE_STRIPALL
   endif
@@ -1046,23 +1091,35 @@ bootstrap-dist:
 	# Precompile fbc sources for various targets
 	rm -rf bootstrap
 	mkdir -p bootstrap/dos
+	mkdir -p bootstrap/freebsd-x86
+	mkdir -p bootstrap/freebsd-x86_64
 	mkdir -p bootstrap/linux-x86
 	mkdir -p bootstrap/linux-x86_64
 	mkdir -p bootstrap/win32
 	mkdir -p bootstrap/win64
-	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target dos          && mv src/compiler/*.asm bootstrap/dos
-	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-x86    && mv src/compiler/*.asm bootstrap/linux-x86
-	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-x86_64 && mv src/compiler/*.c   bootstrap/linux-x86_64
-	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target win32        && mv src/compiler/*.asm bootstrap/win32
-	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target win64        && mv src/compiler/*.c   bootstrap/win64
+	mkdir -p bootstrap/linux-arm
+	mkdir -p bootstrap/linux-aarch64
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target dos            && mv src/compiler/*.asm bootstrap/dos
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target freebsd-x86    && mv src/compiler/*.asm bootstrap/freebsd-x86
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target freebsd-x86_64 && mv src/compiler/*.c   bootstrap/freebsd-x86_64
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-x86      && mv src/compiler/*.asm bootstrap/linux-x86
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-x86_64   && mv src/compiler/*.c   bootstrap/linux-x86_64
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target win32          && mv src/compiler/*.asm bootstrap/win32
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target win64          && mv src/compiler/*.c   bootstrap/win64
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-arm      && mv src/compiler/*.c   bootstrap/linux-arm
+	./$(FBC_EXE) src/compiler/*.bas -m fbc -i inc -e -r -v -target linux-aarch64  && mv src/compiler/*.c   bootstrap/linux-aarch64
 
 	# Ensure to have LFs regardless of host system (LFs will probably work
 	# on DOS/Win32, but CRLFs could cause issues on Linux)
 	dos2unix bootstrap/dos/*
+	dos2unix bootstrap/freebsd-x86/*
+	dos2unix bootstrap/freebsd-x86_64/*
 	dos2unix bootstrap/linux-x86/*
 	dos2unix bootstrap/linux-x86_64/*
 	dos2unix bootstrap/win32/*
 	dos2unix bootstrap/win64/*
+	dos2unix bootstrap/linux-arm/*
+	dos2unix bootstrap/linux-aarch64/*
 
 	# Package FB sources (similar to our "gitdist" command), and add the bootstrap/ directory
 	# Making a .tar.xz should be good enough for now.

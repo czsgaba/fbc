@@ -290,7 +290,14 @@ private sub hCheckByrefParam _
 	dim as ASTNODE ptr t = any
 
 	'' skip any casting if they won't do any conversion
-	t = astSkipNoConvCAST( n->l )
+	'' TODO: astSkipConstCASTs() will skip over any CONST conversions
+	'' This is OK when generating the final AST, as we probably no longer care
+	'' about CONST.  However, if we ever get here and we expect PARSER/AST to
+	'' return an error, or preserve the CONST conversion as part of the
+	'' translation, this may introduce undesired behaviour.  Need to verify.
+	'' Specifically, using astSkipConstCASTs() instead of astSkipNoConvCAST()
+	'' allows us to fix the fbc crash as reported in sf.net bug #910
+	t = astSkipConstCASTs( n->l )
 
 	'' If it's a CALL returning a STRING, it actually returns a pointer,
 	'' which can be passed to the BYREF param as-is
@@ -571,7 +578,7 @@ private sub hUDTPassByval _
 				n->l = astBuildCallResultVar( n->l )
 				hByteByByte( param, n )
 			else
-				assert( symbIsRef( n->l->sym ) = FALSE )
+				assert( symbIsReturnByRef( n->l->sym ) = FALSE )
 				'' CALL with result in registers, patch the type
 				astSetType( n->l, symbGetProcRealType( n->l->sym ), _
 						symbGetProcRealSubtype( n->l->sym ) )
@@ -1016,7 +1023,7 @@ function astNewARG _
 	'' dtors run the object is dead anyways, so modifications made by the
 	'' dtor don't matter)
 	if( ((not symbIsInstanceParam( param )) or _
-	     ((sym->attrib and FB_SYMBATTRIB_NOTHISCONSTNESS) = 0)) ) then
+	     ((sym->pattrib and FB_PROCATTRIB_NOTHISCONSTNESS) = 0)) ) then
 		if( symbCheckConstAssignTopLevel( symbGetFullType( param ), dtype, param->subtype, arg->subtype, symbGetParamMode( param ) ) = FALSE ) then
 			if( symbIsInstanceParam( param ) ) then
 				errReportParam( parent->sym, 0, NULL, FB_ERRMSG_CONSTUDTTONONCONSTMETHOD )

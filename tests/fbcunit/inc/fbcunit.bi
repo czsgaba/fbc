@@ -2,7 +2,7 @@
 #define __FBCUNIT_BI_INCLUDE__ 1
 
 ''  fbcunit - FreeBASIC Compiler Unit Testing Component
-''	Copyright (C) 2017-2019 Jeffery R. Marshall (coder[at]execulink[dot]com)
+''	Copyright (C) 2017-2020 Jeffery R. Marshall (coder[at]execulink[dot]com)
 ''
 ''  License: GNU Lesser General Public License 
 ''           version 2.1 (or any later version) plus
@@ -12,8 +12,8 @@
 | fbcunit - FreeBASIC Compiler Unit testing module        |
 ---------------------------------------------------------'/
 
-#define FBCU_VER_MAJOR 0
-#define FBCU_VER_MINOR 8
+#define FBCU_VER_MAJOR 1
+#define FBCU_VER_MINOR 0
 
 #inclib "fbcunit"
 
@@ -172,6 +172,7 @@
 #define CU_ASSERT_SINGLE_EQUAL( a, e, g )  fbcu.CU_ASSERT_( (abs(csng(a)-csng(e)) <= abs(csng(g))), __FILE__, __LINE__, __FUNCTION__, "CU_ASSERT_SINGLE_EQUAL(" #a "," #e "," #g ")" )
 #define CU_ASSERT_SINGLE_APPROX( a, e, u ) fbcu.CU_ASSERT_( fbcu.sngApprox(csng(a), csng(e), clng(u)), __FILE__, __LINE__, __FUNCTION__, "CU_ASSERT_SINGLE_APPROX(" #a "," #e "," #u ")" )
 
+#define CU_PRINT( s ) fbcu.outputConsoleString( s )
 
 /'-----------------------------
 | fbcunit code emitter macros |
@@ -534,7 +535,35 @@
 		( _
 			byval filename as const __zstring __ptr _
 		) as __boolean
-	
+
+	declare sub fbcu.setBriefSummary alias "fbcu_setBriefSummary_qb" _
+		( _
+			byval briefSummary as __boolean _
+		)
+
+	declare sub fbcu.setHideCases alias "fbcu_setHideCases_qb" _
+		( _
+			byval hideCases as __boolean _
+		)
+
+	declare function fbcu.getHideCases alias "fbcu_getHideCases_qb" _
+		( _
+		) as __boolean
+
+	declare sub fbcu.setShowConsole alias "fbcu_setShowConsole_qb" _
+		( _
+			byval showConsole as __boolean _
+		)
+
+	declare function fbcu.getShowConsole alias "fbcu_getShowConsole_qb" _
+		( _
+		) as __boolean
+
+	declare sub fbcu.outputConsoleString alias "fbcu_outputConsoleString_qb" _
+		( _
+			byref s as const string = "" _
+		)
+
 	declare function fbcu.run_tests alias "fbcu_run_tests_qb" _
 		( _
 			byval show_summary as __boolean = __true, _
@@ -662,6 +691,34 @@ namespace fbcu
 		( _
 			byval filename as const zstring ptr _
 		) as boolean
+
+	declare sub setBriefSummary _
+		( _
+			byval briefSummary as boolean _
+		)
+
+	declare sub setHideCases _
+		( _
+			byval hideCases as boolean _
+		)
+
+	declare function getHideCases _
+		( _
+		) as boolean
+
+	declare sub setShowConsole _
+		( _
+			byval showConsole as boolean _
+		)
+
+	declare function getShowConsole _
+		( _
+		) as boolean
+
+	declare sub outputConsoleString _
+		( _
+			byref s as const string = "" _
+		)
 
 	declare function run_tests _
 		( _

@@ -1,4 +1,4 @@
-.TH FBC 1 "2019-07-23" "FreeBASIC Compiler 1.07.0" "FreeBASIC Compiler"
+.TH FBC 1 "2020-08-16" "FreeBASIC Compiler 1.08.0" "FreeBASIC Compiler"
 .SH NAME
 fbc \- The FreeBASIC compiler
 .SH DESCRIPTION
@@ -147,6 +147,9 @@ Display host/target system name
 \fB\-print\fR \fBx\fR
 Display output binary/library file name (if known)
 .TP
+\fB\-print\fR \fBsha-1\fR
+Display compiler's source code commit sha-1 (if known)
+.TP
 \fB\-profile\fR
 Enable function profiling
 .TP
@@ -191,6 +194,30 @@ Show compiler version
 .TP
 \fB\-w\fR \fBall\fR|\fBpedantic\fR|\fIn\fR
 Set minimum warning level: \fBall\fR, \fBpedantic\fR, or an integer
+.TP
+\fB\-w\fR \fBall\fR
+Enable all warnings
+.TP
+\fB\-w\fR \fBnone\fR
+Disable all warnings
+.TP
+\fB\-w\fR \fBparam\fR
+Enable parameter warnings
+.TP
+\fB\-w\fR \fBescape\fR
+Enable string escape sequence warnings
+.TP
+\fB\-w\fR \fBnext\fR
+Enable next statement warnings
+.TP
+\fB\-w\fR \fBsignedness\fR
+Enable type signedness warnings
+.TP
+\fB\-w\fR \fBconstness\fR
+Enable const type warnings
+.TP
+\fB\-w\fR \fBsuffix\fR
+Enable invalid suffix warnings
 .TP
 \fB\-Wa\fR \fIa,b,c\fR
 Pass options to GAS

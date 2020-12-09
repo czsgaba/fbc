@@ -46,8 +46,8 @@ Destructor vZstring ()
 End Destructor
 
 Operator Len (ByRef v As vZstring) As Integer
-  Return Len(Type<String>(v))        '' found nothing better than this ('vZstring.l' being private)
-End Operator
+  Return Len(Type<String>(v))        '' found nothing better than this
+End Operator                         ''     (or: 'Return Len(Str(v))')
 
 Dim As vZstring v = "FreeBASIC"
 Print "'" & v & "'", Len(v)
@@ -72,6 +72,7 @@ v[0] = Asc("-")
 Print "'" & v & "'", Len(v)
 
 'Print "'" & Right(v, 5) & "'"      '' 'Right' does not yet support types with 'Extends Zstring'
-Print "'" & Right(Str(v), 5) & "'"  '' workaround
+Print "'" & Right(Str(v), 5) & "'"  '' workaround (or: 'Right(Type<String>(v), 5)')
 
 Sleep
+	
